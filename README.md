@@ -48,7 +48,7 @@ public record GetActiveDocumentQuery() : IIpcQuery<DocumentDto>;
 // Streaming query – yields multiple items
 public record GetElementsQuery(string CategoryName) : IIpcStreamQuery<ElementDto>;
 
-// Batch streaming query – yields pre-grouped batches of items
+// Batch streaming query – handler yields pre-grouped batches; caller receives individual items
 public record GetElementsBatchQuery(string CategoryName) : IIpcBatchStreamQuery<ElementDto>;
 
 // Event published by either side
@@ -314,7 +314,7 @@ await _runtime.DisposeAsync();
 | **Command** | `IIpcCommand` | Host ↔ Client | None (fire-and-forget) |
 | **Query** | `IIpcQuery<TResponse>` | Host ↔ Client | Single `TResponse` |
 | **Stream Query** | `IIpcStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (one item per packet) |
-| **Batch Stream Query** | `IIpcBatchStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (items sent in batches) |
+| **Batch Stream Query** | `IIpcBatchStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (handler sends batches; caller receives individual items) |
 | **Event** | `IIpcEvent` | Host ↔ Client | None (pub/sub) |
 
 ### Commands
@@ -359,7 +359,7 @@ await engine.RegisterStreamQueryHandlerAsync<GetElementsQuery, ElementDto>(
 
 ### Batch Stream Queries
 
-Use `IIpcBatchStreamQuery<TItem>` when the handler naturally produces items in groups (e.g. pages from a database, rows from a Revit category). The caller still receives a flat `IAsyncEnumerable<TItem>` — batching is purely a transport-level optimisation that reduces round-trips.
+Use `IIpcBatchStreamQuery<TItem>` when the handler naturally produces items in groups (e.g. pages from a database, rows from a Revit category). The caller still receives a flat `IAsyncEnumerable<TItem>` — batching is purely a transport-level optimization that reduces round-trips.
 
 ```csharp
 // Contract
