@@ -1,4 +1,4 @@
-namespace YourCompany.Ipc.Core.Protocol;
+namespace MultiApp.UI.Extensions.IPC.Core.Protocol;
 
 public enum MessageType
 {

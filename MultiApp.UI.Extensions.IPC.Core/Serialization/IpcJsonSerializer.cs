@@ -1,7 +1,7 @@
 using System.Text.Json;
-using YourCompany.Ipc.Core.Protocol;
+using MultiApp.UI.Extensions.IPC.Core.Protocol;
 
-namespace YourCompany.Ipc.Core.Serialization;
+namespace MultiApp.UI.Extensions.IPC.Core.Serialization;
 
 public static class IpcJsonSerializer
 {

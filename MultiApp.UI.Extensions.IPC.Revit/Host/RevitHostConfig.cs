@@ -1,6 +1,6 @@
-using YourCompany.Ipc.Core.Host;
+using MultiApp.UI.Extensions.IPC.Core.Host;
 
-namespace YourCompany.Ipc.Revit.Host;
+namespace MultiApp.UI.Extensions.IPC.Revit.Host;
 
 public sealed class RevitHostConfig : HostConfig
 {

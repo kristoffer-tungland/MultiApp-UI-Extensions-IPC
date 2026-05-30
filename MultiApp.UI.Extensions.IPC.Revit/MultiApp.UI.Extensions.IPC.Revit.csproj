@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\YourCompany.Ipc.Core\YourCompany.Ipc.Core.csproj" />
+    <ProjectReference Include="..\MultiApp.UI.Extensions.IPC.Core\MultiApp.UI.Extensions.IPC.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

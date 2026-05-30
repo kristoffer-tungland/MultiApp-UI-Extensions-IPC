@@ -1,4 +1,4 @@
-namespace YourCompany.Ipc.Core.Host;
+namespace MultiApp.UI.Extensions.IPC.Core.Host;
 
 public class HostConfig
 {
