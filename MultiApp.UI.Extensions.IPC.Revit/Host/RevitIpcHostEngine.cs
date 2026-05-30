@@ -43,6 +43,10 @@ public sealed class RevitIpcHostEngine : IRevitIpcHostEngine
         where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcStreamQuery<TItem>
         => _engine.SendStreamQueryAsync<TQuery, TItem>(query, cancellationToken);
 
+    public IAsyncEnumerable<TItem> SendBatchStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
+        where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcBatchStreamQuery<TItem>
+        => _engine.SendBatchStreamQueryAsync<TQuery, TItem>(query, cancellationToken);
+
     public Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcEvent
         => _engine.PublishEventAsync(@event, cancellationToken);
@@ -58,6 +62,10 @@ public sealed class RevitIpcHostEngine : IRevitIpcHostEngine
     public Task RegisterStreamQueryHandlerAsync<TQuery, TItem>(Func<TQuery, CancellationToken, IAsyncEnumerable<TItem>> handler, string? action = null)
         where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcStreamQuery<TItem>
         => _engine.RegisterStreamQueryHandlerAsync<TQuery, TItem>(handler, action);
+
+    public Task RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler, string? action = null)
+        where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcBatchStreamQuery<TItem>
+        => _engine.RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(handler, action);
 
     public Task RegisterEventHandlerAsync<TEvent>(Func<TEvent, CancellationToken, Task> handler, string? action = null)
         where TEvent : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcEvent

@@ -29,6 +29,10 @@ public sealed class RevitIpcRuntime : IAsyncDisposable
         where TQuery : IIpcStreamQuery<TItem>
         => HostEngine.SendStreamQueryAsync<TQuery, TItem>(query, cancellationToken);
 
+    public IAsyncEnumerable<TItem> SendBatchStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
+        where TQuery : IIpcBatchStreamQuery<TItem>
+        => HostEngine.SendBatchStreamQueryAsync<TQuery, TItem>(query, cancellationToken);
+
     public Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : IIpcEvent
         => HostEngine.PublishEventAsync(@event, cancellationToken);

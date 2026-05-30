@@ -1,6 +1,6 @@
 # MultiApp.UI.Extensions.IPC
 
-A lightweight, named-pipe IPC library for hosting a UI Extension process from within a desktop application (e.g. a Revit add-in). Communication is bidirectional and follows a CQRS pattern: **Commands**, **Queries**, **Stream Queries**, and **Events**.
+A lightweight, named-pipe IPC library for hosting a UI Extension process from within a desktop application (e.g. a Revit add-in). Communication is bidirectional and follows a CQRS pattern: **Commands**, **Queries**, **Stream Queries**, **Batch Stream Queries**, and **Events**.
 
 ---
 
@@ -47,6 +47,9 @@ public record GetActiveDocumentQuery() : IIpcQuery<DocumentDto>;
 
 // Streaming query – yields multiple items
 public record GetElementsQuery(string CategoryName) : IIpcStreamQuery<ElementDto>;
+
+// Batch streaming query – yields pre-grouped batches of items
+public record GetElementsBatchQuery(string CategoryName) : IIpcBatchStreamQuery<ElementDto>;
 
 // Event published by either side
 public record DocumentOpenedEvent(string DocumentId, string Title) : IIpcEvent;
@@ -310,7 +313,8 @@ await _runtime.DisposeAsync();
 |---|---|---|---|
 | **Command** | `IIpcCommand` | Host ↔ Client | None (fire-and-forget) |
 | **Query** | `IIpcQuery<TResponse>` | Host ↔ Client | Single `TResponse` |
-| **Stream Query** | `IIpcStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` |
+| **Stream Query** | `IIpcStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (one item per packet) |
+| **Batch Stream Query** | `IIpcBatchStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (items sent in batches) |
 | **Event** | `IIpcEvent` | Host ↔ Client | None (pub/sub) |
 
 ### Commands
@@ -353,6 +357,39 @@ await engine.RegisterStreamQueryHandlerAsync<GetElementsQuery, ElementDto>(
     (query, ct) => YieldElementsAsync(query.CategoryName, ct));
 ```
 
+### Batch Stream Queries
+
+Use `IIpcBatchStreamQuery<TItem>` when the handler naturally produces items in groups (e.g. pages from a database, rows from a Revit category). The caller still receives a flat `IAsyncEnumerable<TItem>` — batching is purely a transport-level optimisation that reduces round-trips.
+
+```csharp
+// Contract
+public record GetElementsBatchQuery(string CategoryName) : IIpcBatchStreamQuery<ElementDto>;
+
+// Sender – identical to a regular stream query from the caller's perspective
+await foreach (var element in engine.SendBatchStreamQueryAsync<GetElementsBatchQuery, ElementDto>(
+    new GetElementsBatchQuery("Walls"), cancellationToken))
+{
+    Console.WriteLine($"{element.Id}: {element.Name}");
+}
+
+// Receiver – handler yields IReadOnlyList<TItem> batches
+await engine.RegisterBatchStreamQueryHandlerAsync<GetElementsBatchQuery, ElementDto>(
+    async (query, ct) => YieldElementBatchesAsync(query.CategoryName, ct));
+
+// Example batch producer
+private static async IAsyncEnumerable<IReadOnlyList<ElementDto>> YieldElementBatchesAsync(
+    string category,
+    [EnumeratorCancellation] CancellationToken ct)
+{
+    // Yield a page at a time; each page is sent as a single StreamBatch packet
+    foreach (var page in GetPagedElements(category))
+    {
+        ct.ThrowIfCancellationRequested();
+        yield return page.Select(e => new ElementDto(e.Id, e.Name)).ToList();
+    }
+}
+```
+
 ### Events
 
 ```csharp
@@ -381,6 +418,7 @@ await engine.RegisterEventHandlerAsync<DocumentOpenedEvent>(async (evt, ct) =>
 | `IsSingleInstance` | `true` | When `true`, only one client connection is allowed |
 | `ConnectionTimeoutMs` | `5000` | Milliseconds to wait for the client to connect |
 | `GracefulShutdownTimeoutMs` | `250` | Milliseconds to wait for the client to exit cleanly |
+| `ParentWindowHandle` | `0` | `nint` handle of the host's main window; used by the client for child-window positioning |
 
 ### `RevitHostConfig` (Revit)
 
@@ -388,7 +426,6 @@ Extends `HostConfig` with:
 
 | Property | Description |
 |---|---|
-| `ParentWindowHandle` | `nint` handle of Revit's main window (for child-window positioning) |
 | `AddInId` | GUID string of the Revit add-in |
 
 ---
@@ -398,12 +435,13 @@ Extends `HostConfig` with:
 ```
 MultiApp.UI.Extensions.IPC.Core
 ├── Cqrs/
-│   ├── IIpcMessage            – marker interface
-│   ├── IIpcCommand            – fire-and-forget
-│   ├── IIpcQuery<TResponse>   – request / response
-│   ├── IIpcStreamQuery<TItem> – streaming response
-│   ├── IIpcEvent              – publish / subscribe
-│   └── IpcActionNameResolver  – type → action string mapping
+│   ├── IIpcMessage                  – marker interface
+│   ├── IIpcCommand                  – fire-and-forget
+│   ├── IIpcQuery<TResponse>         – request / response
+│   ├── IIpcStreamQuery<TItem>       – streaming response (one item per packet)
+│   ├── IIpcBatchStreamQuery<TItem>  – streaming response (batched packets)
+│   ├── IIpcEvent                    – publish / subscribe
+│   └── IpcActionNameResolver        – type → action string mapping
 ├── Host/
 │   ├── HostConfig             – connection settings
 │   ├── IIpcHostEngine         – public API surface
@@ -421,7 +459,7 @@ MultiApp.UI.Extensions.IPC.Revit
 │   ├── DirectRevitRequestDispatcher     – calls handler inline
 │   └── ExternalEventRevitRequestDispatcher – marshals to API thread
 ├── Host/
-│   ├── RevitHostConfig        – adds ParentWindowHandle + AddInId
+│   ├── RevitHostConfig        – adds AddInId (ParentWindowHandle is in HostConfig)
 │   ├── IRevitIpcHostEngine    – extends IIpcHostEngine with lifecycle helpers
 │   ├── RevitIpcHostEngine     – full Revit-aware engine
 │   └── RevitIpcRuntime        – convenience wrapper

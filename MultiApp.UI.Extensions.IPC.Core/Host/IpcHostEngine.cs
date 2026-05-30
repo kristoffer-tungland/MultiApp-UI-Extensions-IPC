@@ -186,6 +186,10 @@ public sealed class IpcHostEngine : IIpcHostEngine
         where TQuery : IIpcStreamQuery<TItem>
         => SendStreamingRequestAsync<TQuery, TItem>(IpcActionNameResolver.For<TQuery>(), query, cancellationToken);
 
+    public IAsyncEnumerable<TItem> SendBatchStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
+        where TQuery : IIpcBatchStreamQuery<TItem>
+        => SendStreamingRequestAsync<TQuery, TItem>(IpcActionNameResolver.For<TQuery>(), query, cancellationToken);
+
     public Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : IIpcEvent
         => SendNotificationAsync(IpcActionNameResolver.For<TEvent>(), @event, cancellationToken);
@@ -230,6 +234,35 @@ public sealed class IpcHostEngine : IIpcHostEngine
                     CorrelationId = packet.MessageId,
                     PayloadType = item?.GetType().FullName ?? typeof(TItem).FullName,
                     PayloadJson = IpcJsonSerializer.SerializePayload(item)
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
+            await SendPacketAsync(new IpcPacket
+            {
+                Type = MessageType.StreamEnd,
+                Action = packet.Action,
+                CorrelationId = packet.MessageId
+            }, cancellationToken).ConfigureAwait(false);
+        });
+
+    public Task RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(
+        Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler,
+        string? action = null)
+        where TQuery : IIpcBatchStreamQuery<TItem>
+        => RegisterIncomingHandlerAsync(action ?? IpcActionNameResolver.For<TQuery>(), async (packet, cancellationToken) =>
+        {
+            var query = DeserializePayload<TQuery>(packet);
+            var stream = handler(query, cancellationToken);
+
+            await foreach (var batch in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                await SendPacketAsync(new IpcPacket
+                {
+                    Type = MessageType.StreamBatch,
+                    Action = packet.Action,
+                    CorrelationId = packet.MessageId,
+                    PayloadType = typeof(List<TItem>).FullName,
+                    PayloadJson = IpcJsonSerializer.SerializePayload(batch)
                 }, cancellationToken).ConfigureAwait(false);
             }
 

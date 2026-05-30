@@ -9,4 +9,5 @@ public class HostConfig
     public int GracefulShutdownTimeoutMs { get; set; } = 250;
     public string ClientArguments { get; set; } = string.Empty;
     public string? WorkingDirectory { get; set; }
+    public nint ParentWindowHandle { get; set; }
 }

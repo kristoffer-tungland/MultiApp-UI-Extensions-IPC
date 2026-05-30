@@ -27,6 +27,9 @@ public interface IIpcHostEngine : IAsyncDisposable
     IAsyncEnumerable<TItem> SendStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
         where TQuery : IIpcStreamQuery<TItem>;
 
+    IAsyncEnumerable<TItem> SendBatchStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
+        where TQuery : IIpcBatchStreamQuery<TItem>;
+
     Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : IIpcEvent;
 
@@ -44,6 +47,11 @@ public interface IIpcHostEngine : IAsyncDisposable
         Func<TQuery, CancellationToken, IAsyncEnumerable<TItem>> handler,
         string? action = null)
         where TQuery : IIpcStreamQuery<TItem>;
+
+    Task RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(
+        Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler,
+        string? action = null)
+        where TQuery : IIpcBatchStreamQuery<TItem>;
 
     Task RegisterEventHandlerAsync<TEvent>(
         Func<TEvent, CancellationToken, Task> handler,

@@ -56,6 +56,18 @@ public sealed class RevitIpcServer
             action);
     }
 
+    public Task RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(
+        Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler,
+        bool useExternalEvent = true,
+        string? action = null)
+        where TQuery : IIpcBatchStreamQuery<TItem>
+    {
+        var dispatcher = ResolveDispatcher(useExternalEvent);
+        return _hostEngine.RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(
+            (query, cancellationToken) => dispatcher.InvokeStreamAsync<IReadOnlyList<TItem>>(token => handler(query, token), cancellationToken),
+            action);
+    }
+
     public Task RegisterEventHandlerAsync<TEvent>(
         Func<TEvent, CancellationToken, Task> handler,
         bool useExternalEvent = true,
