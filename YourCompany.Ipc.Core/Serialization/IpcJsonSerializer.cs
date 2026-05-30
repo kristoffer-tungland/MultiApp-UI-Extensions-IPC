@@ -16,7 +16,7 @@ public static class IpcJsonSerializer
     public static IpcPacket DeserializePacket(string json)
     {
         var packet = JsonSerializer.Deserialize<IpcPacket>(json, JsonOptions);
-        return packet ?? throw new InvalidOperationException("Packet payload cannot be null.");
+        return packet ?? throw new InvalidOperationException("Deserialized packet cannot be null.");
     }
 
     public static string? SerializePayload<T>(T payload)

@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace YourCompany.Ipc.Core.Host;
 
 public interface IIpcHostEngine : IAsyncDisposable

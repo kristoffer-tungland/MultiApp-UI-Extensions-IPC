@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using YourCompany.Ipc.Core.Protocol;
 using YourCompany.Ipc.Core.Serialization;
@@ -20,13 +21,24 @@ public sealed class IpcHostEngine : IIpcHostEngine
     private StreamWriter? _writer;
     private Process? _clientProcess;
     private Task? _readLoop;
+    private TimeSpan _gracefulShutdownTimeout = TimeSpan.FromMilliseconds(250);
 
     public async Task StartClientAsync(HostConfig config, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(config.ClientExecutablePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(config.PipeName);
+        if (config.ConnectionTimeoutMs <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config.ConnectionTimeoutMs));
+        }
+
+        if (config.GracefulShutdownTimeoutMs < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config.GracefulShutdownTimeoutMs));
+        }
 
         await StopAsync(cancellationToken).ConfigureAwait(false);
+        _gracefulShutdownTimeout = TimeSpan.FromMilliseconds(config.GracefulShutdownTimeoutMs);
 
         _pipe = new NamedPipeServerStream(
             config.PipeName,
@@ -150,13 +162,24 @@ public sealed class IpcHostEngine : IIpcHostEngine
 
         if (_readLoop is not null)
         {
-            await Task.WhenAny(_readLoop, Task.Delay(250, cancellationToken)).ConfigureAwait(false);
+            await Task.WhenAny(_readLoop, Task.Delay(_gracefulShutdownTimeout, cancellationToken)).ConfigureAwait(false);
             _readLoop = null;
         }
 
         if (_clientProcess is { HasExited: false })
         {
-            _clientProcess.Kill(entireProcessTree: true);
+            try
+            {
+                _clientProcess.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Trace.TraceWarning("Client process shutdown race detected: {0}", ex.Message);
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                Trace.TraceWarning("Client process shutdown failed: {0}", ex.Message);
+            }
         }
 
         _writer?.Dispose();
@@ -212,7 +235,7 @@ public sealed class IpcHostEngine : IIpcHostEngine
         };
 
         return Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start client process.");
+            ?? throw new InvalidOperationException($"Failed to start client process: {config.ClientExecutablePath}");
     }
 
     private IpcPacket CreatePacket<T>(MessageType type, string action, T payload, string? correlationId)
@@ -241,7 +264,7 @@ public sealed class IpcHostEngine : IIpcHostEngine
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _writer.WriteLineAsync(line).ConfigureAwait(false);
+            await _writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -258,7 +281,31 @@ public sealed class IpcHostEngine : IIpcHostEngine
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var line = await _reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            string? line;
+            try
+            {
+                line = await _reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (IOException ex)
+            {
+                FailPendingOperations(ex);
+                break;
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (line is null)
+            {
+                FailPendingOperations(new IOException("IPC pipe disconnected."));
+                break;
+            }
+
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -269,8 +316,9 @@ public sealed class IpcHostEngine : IIpcHostEngine
             {
                 packet = IpcJsonSerializer.DeserializePacket(line);
             }
-            catch
+            catch (JsonException)
             {
+                Trace.TraceWarning("Received malformed IPC packet.");
                 continue;
             }
 
@@ -300,5 +348,22 @@ public sealed class IpcHostEngine : IIpcHostEngine
                 _pendingStreams.TryRemove(packet.CorrelationId, out _);
             }
         }
+    }
+
+    private void FailPendingOperations(Exception ex)
+    {
+        foreach (var pending in _pendingRequests.Values)
+        {
+            pending.TrySetException(ex);
+        }
+
+        _pendingRequests.Clear();
+
+        foreach (var stream in _pendingStreams.Values)
+        {
+            stream.Writer.TryComplete(ex);
+        }
+
+        _pendingStreams.Clear();
     }
 }
