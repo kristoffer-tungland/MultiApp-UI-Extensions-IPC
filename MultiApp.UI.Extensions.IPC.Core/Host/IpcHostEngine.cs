@@ -33,6 +33,7 @@ public sealed class IpcHostEngine : IIpcHostEngine
 
         ArgumentException.ThrowIfNullOrWhiteSpace(config.ClientExecutablePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(config.PipeName);
+        ValidatePipeName(config.PipeName);
 
         if (config.ConnectionTimeoutMs <= 0)
         {
@@ -93,7 +94,7 @@ public sealed class IpcHostEngine : IIpcHostEngine
             if (_pendingRequests.TryRemove(packet.MessageId, out var pending))
             {
                 pending.TrySetCanceled(cancellationToken);
-                _ = TrySendCancellationSignalAsync(action, packet.MessageId);
+                _ = SendCancellationSignalSafelyAsync(action, packet.MessageId);
             }
         });
 
@@ -127,7 +128,7 @@ public sealed class IpcHostEngine : IIpcHostEngine
 
         using var registration = cancellationToken.Register(() =>
         {
-            _ = TrySendCancellationSignalAsync(action, packet.MessageId);
+            _ = SendCancellationSignalSafelyAsync(action, packet.MessageId);
             channel.Writer.TryComplete(new OperationCanceledException(cancellationToken));
             _pendingStreams.TryRemove(packet.MessageId, out _);
         });
@@ -252,6 +253,27 @@ public sealed class IpcHostEngine : IIpcHostEngine
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        if (_clientProcess is { HasExited: false })
+        {
+            await SendHostStoppingSignalSafelyAsync().ConfigureAwait(false);
+
+            if (_gracefulShutdownTimeout > TimeSpan.Zero)
+            {
+                try
+                {
+                    await _clientProcess.WaitForExitAsync(cancellationToken)
+                        .WaitAsync(_gracefulShutdownTimeout, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                }
+                catch (TimeoutException)
+                {
+                }
+            }
+        }
+
         _connectionCts?.Cancel();
 
         if (_readLoop is not null)
@@ -267,11 +289,12 @@ public sealed class IpcHostEngine : IIpcHostEngine
         {
             try
             {
+                Trace.TraceWarning("Force-killing client process after graceful shutdown timeout.");
                 _clientProcess.Kill(entireProcessTree: true);
             }
             catch (InvalidOperationException ex)
             {
-                Trace.TraceWarning("Client process shutdown race detected: {0}", ex.Message);
+                Trace.TraceWarning("Client process already exited during shutdown: {0}", ex.Message);
             }
             catch (System.ComponentModel.Win32Exception ex)
             {
@@ -479,7 +502,12 @@ public sealed class IpcHostEngine : IIpcHostEngine
         catch (Exception ex)
         {
             Trace.TraceError("Unhandled IPC request handler error: {0}", ex);
-            await SendResponsePacketAsync(packet, payload: new { Error = ex.Message }, payloadType: typeof(string), isCancelled: false, CancellationToken.None).ConfigureAwait(false);
+            await SendResponsePacketAsync(
+                packet,
+                payload: $"Handler execution failed for action '{packet.Action}'.",
+                payloadType: typeof(string),
+                isCancelled: false,
+                CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -529,14 +557,40 @@ public sealed class IpcHostEngine : IIpcHostEngine
             IsCancelled = isCancelled
         }, cancellationToken);
 
-    private Task TrySendCancellationSignalAsync(string action, string correlationId)
-        => SendPacketAsync(new IpcPacket
+    private async Task SendCancellationSignalSafelyAsync(string action, string correlationId)
+    {
+        try
         {
-            Type = MessageType.LifecycleSignal,
-            Action = action,
-            CorrelationId = correlationId,
-            IsCancelled = true
-        }, CancellationToken.None);
+            await SendPacketAsync(new IpcPacket
+            {
+                Type = MessageType.LifecycleSignal,
+                Action = action,
+                CorrelationId = correlationId,
+                IsCancelled = true
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("Failed to send cancellation signal for '{0}': {1}", correlationId, ex.Message);
+        }
+    }
+
+    private async Task SendHostStoppingSignalSafelyAsync()
+    {
+        try
+        {
+            await SendPacketAsync(new IpcPacket
+            {
+                Type = MessageType.LifecycleSignal,
+                Action = "HostStopping",
+                IsCancelled = false
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("Failed to send host stopping signal: {0}", ex.Message);
+        }
+    }
 
     private void FailPendingOperations(Exception ex)
     {
@@ -566,5 +620,13 @@ public sealed class IpcHostEngine : IIpcHostEngine
     private void EnsureNotDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private static void ValidatePipeName(string pipeName)
+    {
+        if (pipeName.Any(char.IsWhiteSpace) || pipeName.Contains('"') || pipeName.Contains('\''))
+        {
+            throw new ArgumentException("Pipe name contains unsupported characters.", nameof(pipeName));
+        }
     }
 }

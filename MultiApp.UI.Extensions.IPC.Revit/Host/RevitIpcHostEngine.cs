@@ -14,7 +14,7 @@ public sealed class RevitIpcHostEngine : IRevitIpcHostEngine
             ? null
             : new ExternalEventRevitRequestDispatcher(externalEventBridge);
 
-        Server = new RevitIpcServer(_engine, externalDispatcher);
+        Server = new RevitIpcServer(_engine, externalEventDispatcher: externalDispatcher);
     }
 
     public RevitIpcServer Server { get; }

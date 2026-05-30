@@ -12,8 +12,8 @@ public sealed class RevitIpcServer
 
     public RevitIpcServer(
         IIpcHostEngine hostEngine,
-        IRevitRequestDispatcher? externalEventDispatcher = null,
-        IRevitRequestDispatcher? directDispatcher = null)
+        IRevitRequestDispatcher? directDispatcher = null,
+        IRevitRequestDispatcher? externalEventDispatcher = null)
     {
         _hostEngine = hostEngine ?? throw new ArgumentNullException(nameof(hostEngine));
         _externalEventDispatcher = externalEventDispatcher;

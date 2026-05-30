@@ -1,5 +1,8 @@
 namespace MultiApp.UI.Extensions.IPC.Revit.Execution;
 
+/// <summary>
+/// Abstraction over Revit IExternalEvent execution.
+/// </summary>
 public interface IRevitExternalEventBridge
 {
     Task InvokeAsync(Func<CancellationToken, Task> callback, CancellationToken cancellationToken = default);

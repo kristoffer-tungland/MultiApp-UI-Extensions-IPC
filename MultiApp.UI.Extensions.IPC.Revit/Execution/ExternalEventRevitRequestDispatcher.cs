@@ -1,5 +1,9 @@
 namespace MultiApp.UI.Extensions.IPC.Revit.Execution;
 
+/// <summary>
+/// ExternalEvent dispatcher that executes Revit API work on the ExternalEvent thread.
+/// Stream callbacks are materialized before replaying to the caller.
+/// </summary>
 public sealed class ExternalEventRevitRequestDispatcher : IRevitRequestDispatcher
 {
     private readonly IRevitExternalEventBridge _externalEventBridge;
@@ -19,6 +23,8 @@ public sealed class ExternalEventRevitRequestDispatcher : IRevitRequestDispatche
         Func<CancellationToken, IAsyncEnumerable<TItem>> callback,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // Revit ExternalEvent executes on the API thread; this bridge currently materializes the stream
+        // inside a single invocation and replays items to preserve thread affinity guarantees.
         var items = await _externalEventBridge.InvokeAsync(async innerToken =>
         {
             var result = new List<TItem>();
