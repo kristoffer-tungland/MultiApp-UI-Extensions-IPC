@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="YourCompany.Ipc.Core/YourCompany.Ipc.Core.csproj" />
+  <Project Path="YourCompany.Ipc.Revit/YourCompany.Ipc.Revit.csproj" />
+</Solution>
