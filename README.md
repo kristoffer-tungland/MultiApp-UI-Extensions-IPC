@@ -433,7 +433,7 @@ MultiApp.UI.Extensions.IPC.Revit
 
 ## Threading Notes (Revit)
 
-- **`useExternalEvent: true`** (default on `RevitIpcServer`): the handler callback is marshalled to Revit's API thread via `IExternalEvent`. For stream handlers, the entire stream is materialised inside one event invocation before being replayed to the caller.
+- **`useExternalEvent: true`** (default on `RevitIpcServer`): the handler callback is marshalled to Revit's API thread via `IExternalEvent`. For stream handlers, the entire stream is materialized inside one event invocation before being replayed to the caller.
 - **`useExternalEvent: false`**: the handler runs directly on the thread-pool. Use this for handlers that do not need Revit API access.
 
 ---
