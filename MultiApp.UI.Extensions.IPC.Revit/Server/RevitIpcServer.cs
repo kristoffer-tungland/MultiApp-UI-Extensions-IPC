@@ -68,6 +68,19 @@ public sealed class RevitIpcServer
             action);
     }
 
+    public Task RegisterProgressCommandHandlerAsync<TCommand, TProgress>(
+        Func<TCommand, IProgress<TProgress>, CancellationToken, Task> handler,
+        bool useExternalEvent = true,
+        string? action = null)
+        where TCommand : IIpcProgressCommand<TProgress>
+    {
+        var dispatcher = ResolveDispatcher(useExternalEvent);
+        return _hostEngine.RegisterProgressCommandHandlerAsync<TCommand, TProgress>(
+            (command, progress, cancellationToken) =>
+                dispatcher.InvokeAsync(token => handler(command, progress, token), cancellationToken),
+            action);
+    }
+
     public Task RegisterEventHandlerAsync<TEvent>(
         Func<TEvent, CancellationToken, Task> handler,
         bool useExternalEvent = true,

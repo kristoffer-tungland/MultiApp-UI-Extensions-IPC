@@ -190,6 +190,10 @@ public sealed class IpcHostEngine : IIpcHostEngine
         where TQuery : IIpcBatchStreamQuery<TItem>
         => SendStreamingRequestAsync<TQuery, TItem>(IpcActionNameResolver.For<TQuery>(), query, cancellationToken);
 
+    public IAsyncEnumerable<TProgress> SendProgressCommandAsync<TCommand, TProgress>(TCommand command, CancellationToken cancellationToken = default)
+        where TCommand : IIpcProgressCommand<TProgress>
+        => SendStreamingRequestAsync<TCommand, TProgress>(IpcActionNameResolver.For<TCommand>(), command, cancellationToken);
+
     public Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : IIpcEvent
         => SendNotificationAsync(IpcActionNameResolver.For<TEvent>(), @event, cancellationToken);
@@ -265,6 +269,47 @@ public sealed class IpcHostEngine : IIpcHostEngine
                     PayloadJson = IpcJsonSerializer.SerializePayload(batch)
                 }, cancellationToken).ConfigureAwait(false);
             }
+
+            await SendPacketAsync(new IpcPacket
+            {
+                Type = MessageType.StreamEnd,
+                Action = packet.Action,
+                CorrelationId = packet.MessageId
+            }, cancellationToken).ConfigureAwait(false);
+        });
+
+    public Task RegisterProgressCommandHandlerAsync<TCommand, TProgress>(
+        Func<TCommand, IProgress<TProgress>, CancellationToken, Task> handler,
+        string? action = null)
+        where TCommand : IIpcProgressCommand<TProgress>
+        => RegisterIncomingHandlerAsync(action ?? IpcActionNameResolver.For<TCommand>(), async (packet, cancellationToken) =>
+        {
+            var command = DeserializePayload<TCommand>(packet);
+
+            var progressChannel = Channel.CreateUnbounded<TProgress>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+            IProgress<TProgress> progress = new DirectProgress<TProgress>(item => progressChannel.Writer.TryWrite(item));
+
+            var handlerTask = handler(command, progress, cancellationToken);
+            _ = handlerTask.ContinueWith(_ => progressChannel.Writer.TryComplete(), TaskScheduler.Default);
+
+            await foreach (var item in progressChannel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                await SendPacketAsync(new IpcPacket
+                {
+                    Type = MessageType.StreamItem,
+                    Action = packet.Action,
+                    CorrelationId = packet.MessageId,
+                    PayloadType = item?.GetType().FullName ?? typeof(TProgress).FullName,
+                    PayloadJson = IpcJsonSerializer.SerializePayload(item)
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
+            await handlerTask.ConfigureAwait(false);
 
             await SendPacketAsync(new IpcPacket
             {
@@ -661,5 +706,10 @@ public sealed class IpcHostEngine : IIpcHostEngine
         {
             throw new ArgumentException("Pipe name contains unsupported characters.", nameof(pipeName));
         }
+    }
+
+    private sealed class DirectProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }

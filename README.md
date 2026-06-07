@@ -54,9 +54,13 @@ public record GetElementsBatchQuery(string CategoryName) : IIpcBatchStreamQuery<
 // Event published by either side
 public record DocumentOpenedEvent(string DocumentId, string Title) : IIpcEvent;
 
+// Progress command – runs a command while streaming progress updates back to the caller
+public record ImportElementsCommand(string FilePath) : IIpcProgressCommand<ImportProgressDto>;
+
 // Supporting DTOs
 public record DocumentDto(string Id, string Title);
 public record ElementDto(int Id, string Name);
+public record ImportProgressDto(int ProcessedCount, int TotalCount, string CurrentItem);
 ```
 
 Action names are derived automatically from the type's `FullName`, so no manual registration strings are needed.
@@ -270,6 +274,19 @@ private async Task StartIpcAsync(RevitIpcRuntime runtime, UIControlledApplicatio
         async (query, ct) => GetElementStreamAsync(query, ct),
         useExternalEvent: true);
 
+    await runtime.Server.RegisterProgressCommandHandlerAsync<ImportElementsCommand, ImportProgressDto>(
+        async (command, progress, ct) =>
+        {
+            var items = LoadItems(command.FilePath);
+            for (int i = 0; i < items.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                await ImportItemAsync(items[i], ct);
+                progress.Report(new ImportProgressDto(i + 1, items.Count, items[i].Name));
+            }
+        },
+        useExternalEvent: true);
+
     // Subscribe to events coming from the UI Extension
     await runtime.Server.RegisterEventHandlerAsync<DocumentOpenedEvent>(
         async (evt, ct) => { /* update add-in state */ },
@@ -315,6 +332,7 @@ await _runtime.DisposeAsync();
 | **Query** | `IIpcQuery<TResponse>` | Host ↔ Client | Single `TResponse` |
 | **Stream Query** | `IIpcStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (one item per packet) |
 | **Batch Stream Query** | `IIpcBatchStreamQuery<TItem>` | Host ↔ Client | `IAsyncEnumerable<TItem>` (handler sends batches; caller receives individual items) |
+| **Progress Command** | `IIpcProgressCommand<TProgress>` | Host ↔ Client | `IAsyncEnumerable<TProgress>` (progress updates while command executes) |
 | **Event** | `IIpcEvent` | Host ↔ Client | None (pub/sub) |
 
 ### Commands
@@ -390,6 +408,36 @@ private static async IAsyncEnumerable<IReadOnlyList<ElementDto>> YieldElementBat
 }
 ```
 
+### Progress Commands
+
+Use `IIpcProgressCommand<TProgress>` when a command needs to stream progress updates back to the caller while it executes (e.g. a long-running import or processing job).
+
+```csharp
+// Contract
+public record ImportElementsCommand(string FilePath) : IIpcProgressCommand<ImportProgressDto>;
+public record ImportProgressDto(int ProcessedCount, int TotalCount, string CurrentItem);
+
+// Sender – receives progress updates as they are reported by the handler
+await foreach (var progress in engine.SendProgressCommandAsync<ImportElementsCommand, ImportProgressDto>(
+    new ImportElementsCommand("/path/to/file.json"), cancellationToken))
+{
+    Console.WriteLine($"{progress.ProcessedCount}/{progress.TotalCount} – {progress.CurrentItem}");
+}
+
+// Receiver – handler reports progress via IProgress<T> while doing work
+await engine.RegisterProgressCommandHandlerAsync<ImportElementsCommand, ImportProgressDto>(
+    async (command, progress, ct) =>
+    {
+        var items = LoadItems(command.FilePath);
+        for (int i = 0; i < items.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await ProcessItemAsync(items[i], ct);
+            progress.Report(new ImportProgressDto(i + 1, items.Count, items[i].Name));
+        }
+    });
+```
+
 ### Events
 
 ```csharp
@@ -440,6 +488,7 @@ MultiApp.UI.Extensions.IPC.Core
 │   ├── IIpcQuery<TResponse>         – request / response
 │   ├── IIpcStreamQuery<TItem>       – streaming response (one item per packet)
 │   ├── IIpcBatchStreamQuery<TItem>  – streaming response (batched packets)
+│   ├── IIpcProgressCommand<TProgress> – command with streaming progress updates
 │   ├── IIpcEvent                    – publish / subscribe
 │   └── IpcActionNameResolver        – type → action string mapping
 ├── Host/

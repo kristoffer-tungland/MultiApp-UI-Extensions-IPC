@@ -10,4 +10,6 @@ public interface IIpcStreamQuery<TItem> : IIpcMessage;
 
 public interface IIpcBatchStreamQuery<TItem> : IIpcMessage;
 
+public interface IIpcProgressCommand<TProgress> : IIpcMessage;
+
 public interface IIpcEvent : IIpcMessage;

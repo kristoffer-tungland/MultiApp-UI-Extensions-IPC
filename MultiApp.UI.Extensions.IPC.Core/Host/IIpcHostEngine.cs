@@ -30,6 +30,9 @@ public interface IIpcHostEngine : IAsyncDisposable
     IAsyncEnumerable<TItem> SendBatchStreamQueryAsync<TQuery, TItem>(TQuery query, CancellationToken cancellationToken = default)
         where TQuery : IIpcBatchStreamQuery<TItem>;
 
+    IAsyncEnumerable<TProgress> SendProgressCommandAsync<TCommand, TProgress>(TCommand command, CancellationToken cancellationToken = default)
+        where TCommand : IIpcProgressCommand<TProgress>;
+
     Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : IIpcEvent;
 
@@ -52,6 +55,11 @@ public interface IIpcHostEngine : IAsyncDisposable
         Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler,
         string? action = null)
         where TQuery : IIpcBatchStreamQuery<TItem>;
+
+    Task RegisterProgressCommandHandlerAsync<TCommand, TProgress>(
+        Func<TCommand, IProgress<TProgress>, CancellationToken, Task> handler,
+        string? action = null)
+        where TCommand : IIpcProgressCommand<TProgress>;
 
     Task RegisterEventHandlerAsync<TEvent>(
         Func<TEvent, CancellationToken, Task> handler,

@@ -47,6 +47,10 @@ public sealed class RevitIpcHostEngine : IRevitIpcHostEngine
         where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcBatchStreamQuery<TItem>
         => _engine.SendBatchStreamQueryAsync<TQuery, TItem>(query, cancellationToken);
 
+    public IAsyncEnumerable<TProgress> SendProgressCommandAsync<TCommand, TProgress>(TCommand command, CancellationToken cancellationToken = default)
+        where TCommand : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcProgressCommand<TProgress>
+        => _engine.SendProgressCommandAsync<TCommand, TProgress>(command, cancellationToken);
+
     public Task PublishEventAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
         where TEvent : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcEvent
         => _engine.PublishEventAsync(@event, cancellationToken);
@@ -66,6 +70,10 @@ public sealed class RevitIpcHostEngine : IRevitIpcHostEngine
     public Task RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(Func<TQuery, CancellationToken, IAsyncEnumerable<IReadOnlyList<TItem>>> handler, string? action = null)
         where TQuery : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcBatchStreamQuery<TItem>
         => _engine.RegisterBatchStreamQueryHandlerAsync<TQuery, TItem>(handler, action);
+
+    public Task RegisterProgressCommandHandlerAsync<TCommand, TProgress>(Func<TCommand, IProgress<TProgress>, CancellationToken, Task> handler, string? action = null)
+        where TCommand : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcProgressCommand<TProgress>
+        => _engine.RegisterProgressCommandHandlerAsync<TCommand, TProgress>(handler, action);
 
     public Task RegisterEventHandlerAsync<TEvent>(Func<TEvent, CancellationToken, Task> handler, string? action = null)
         where TEvent : MultiApp.UI.Extensions.IPC.Core.Cqrs.IIpcEvent
