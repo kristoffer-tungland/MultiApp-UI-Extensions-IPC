@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MultiApp.UI.Extensions.IPC.Core/MultiApp.UI.Extensions.IPC.Core.csproj" />
+  <Project Path="MultiApp.UI.Extensions.IPC.Revit/MultiApp.UI.Extensions.IPC.Revit.csproj" />
+</Solution>
